@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Deployer</title>
+    <style>
+        body {
+          font-family: Arial, sans-serif;
+          display: flex;
+          margin: 0;
+          padding: 0;
+          min-height: 100vh;
+        }
+
+        #sidebar {
+          width: 200px;
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          background-color: #f0f0f0;
+          height: 100vh;
+          position: fixed;
+          left: 0;
+          top: 0;
+          overflow-y: auto;
+        }
+        
+        #main {
+          flex-grow: 1;
+          padding: 20px;
+          margin-left: 240px; /* 200px sidebar + 40px padding */
+          width: calc(100% - 240px);
+          box-sizing: border-box;
+        }
+        
+        .card {
+          border: 1px solid #ccc;
+          padding: 10px;
+          margin: 10px 0;
+        }
+        
+        #grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+        }
+        
+        #leaders {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+        
+        .leader-card {
+          text-align: center;
+        }
+        
+        #micro-leaderboard {
+          margin-top: auto;
+        }
+        
+        input, textarea, button, select {
+          width: 100%;
+          margin-bottom: 10px;
+          padding: 5px;
+        }
+        
+        #imageSelection img {
+          width: 100px;
+          height: 100px;
+          margin: 5px;
+          cursor: pointer;
+        }
+        
+        .hidden {
+          display: none;
+        }
+        
+        #status {
+          background-color: #f0f0f0;
+          padding: 10px;
+          margin-bottom: 10px;
+        }
+        
+        h1, h2, h3 {
+          margin-top: 0;
+        }
+        
+        #tokenForm {
+          max-width: 600px;
+        }
+        
+        #connectBtn {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          width: auto;
+        }
+        
+        .filter-container {
+          display: flex;
+          gap: 10px;
+          margin-bottom: 20px;
+        }
+        
+        .filter-container select {
+          width: auto;
+        }
+    </style>
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>IndependenceStore</h2>
+        <a href="/">Independents</a>
+        <a href="/Pages/token-deployer.html">Token Deployer</a>
+        <a href="#">Leaderboard</a>
+        <div id="micro-leaderboard">
+            <h3>Leaderboard</h3>
+            <div id="top-users"></div>
+        </div>
+    </div>
+    <div id="main">
+        <h1>Token Deployer</h1>
+        <div id="status"></div>
+        <form id="tokenForm">
+            <button type="button" id="aiFill">Use AI</button>
+            <div id="nameSelection" class="hidden">
+                <input type="text" id="customName" placeholder="Name for generation">
+                <button type="button" id="submitCustomName">Submit</button>
+                <button type="button" id="chooseNameForMe">Choose the name for me</button>
+            </div>
+            <div id="aiGeneratedNames" class="hidden"></div>
+            <input type="text" id="name" placeholder="Name" required>
+            <input type="text" id="symbol" placeholder="Symbol" required>
+            <textarea id="description" placeholder="Description" required></textarea>
+            <input type="text" id="website" placeholder="Website">
+            <input type="text" id="telegram" placeholder="Telegram">
+            <div id="imageSelection" class="hidden"></div>
+
+            <button type="button" id="generateLogo" style="display: none;">Generate Logo</button>
+            <button type="button" id="generateWebsite" style="display: none;">Generate Website</button>
+
+            <button onclick="connectWallet()" id="connectBtn" class="hidden">Connect MetaMask</button>
+            <button onclick="sendTransaction()" disabled id="sendBtn" class="hidden">Pay AI</button>
+            <p id="message"></p>
+        </form>
+    </div>
+
+    <script>
+        const WEBHOOK_URL = 'https://juank3120.app.n8n.cloud/webhook-test/0488e69d-0047-455e-afe0-15af5690d01e'; 
+
+        const elements = {
+            aiFill: document.getElementById('aiFill'),
+            nameSelection: document.getElementById('nameSelection'),
+            customName: document.getElementById('customName'),
+            submitCustomName: document.getElementById('submitCustomName'),
+            chooseNameForMe: document.getElementById('chooseNameForMe'),
+            aiGeneratedNames: document.getElementById('aiGeneratedNames'),
+            imageSelection: document.getElementById('imageSelection'),
+            status: document.getElementById('status'),
+            generateLogo: document.getElementById('generateLogo'),
+            generateWebsite: document.getElementById('generateWebsite') 
+        };
+
+        function updateStatus(message) {
+            elements.status.innerHTML += `<p>${message}</p>`;
+        }
+
+        elements.aiFill.addEventListener('click', () => {
+            elements.nameSelection.classList.remove('hidden');
+            // Show Ethereum buttons after clicking "Use AI"
+            document.getElementById('connectBtn').classList.remove('hidden');
+            document.getElementById('sendBtn').classList.remove('hidden');
+        });
+
+        elements.submitCustomName.addEventListener('click', () => {
+            const customName = elements.customName.value;
+            sendWebhookRequest({ description: customName });
+        });
+
+        elements.chooseNameForMe.addEventListener('click', () => sendWebhookRequest({ choose: true }));
+
+        elements.generateLogo.addEventListener('click', () => {
+            const name = document.getElementById('name').value;
+            sendWebhookRequest({ name: name });
+        });
+        
+        elements.generateWebsite.addEventListener('click', async () => {
+            const name = document.getElementById('name').value;
+            const symbol = document.getElementById('symbol').value;
+            const description = document.getElementById('description').value;
+            const selectedLogo = document.querySelector('#imageSelection img.selected'); 
+
+            if (selectedLogo) {
+                const response = await fetch(selectedLogo.src);
+                const blob = await response.blob();
+
+                sendWebhookRequest({ 
+                    name: name, 
+                    symbol: symbol,
+                    description: description,
+                    logo: blob 
+                });
+            } else {
+                console.error('No logo selected');
+            }           
+        });        
+
+        async function sendWebhookRequest(data) {
+            try {
+                updateStatus('Sending webhook request...');
+
+                const formData = new FormData();
+                for (const key in data) {
+                    if (key === 'logo' && data[key] instanceof Blob) {
+                        formData.append('logo', data[key], 'logo.png');
+                    } else {
+                        formData.append(key, data[key]);
+                    }
+                }
+                
+                const response = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                updateStatus(`Received response with status: ${response.status}`);
+
+                if (response.ok) { 
+                    const contentType = response.headers.get('content-type');
+                    updateStatus(`Content-Type: ${contentType}`);
+
+                    if (contentType && contentType.includes('application/zip')) {
+                        updateStatus('Processing zip response');
+                        const blob = await response.blob();
+                        await processImageResponse(blob);
+                    } else if (contentType && contentType.includes('application/json')) {
+                        const jsonData = await response.json();
+                        processWebhookResponse(jsonData);
+                    } else {
+                        updateStatus('Unexpected response content type.');
+                    }
+                } else {
+                    updateStatus('Error fetching data from the server');
+                }
+
+            } catch (error) {
+                updateStatus(`Error in sendWebhookRequest: ${error}`);
+            }
+        }        
+
+        function processWebhookResponse(response) {
+            updateStatus(`Processing webhook response: ${JSON.stringify(response)}`);
+            if (response.Nombre1) {
+                displayFourNames(response);
+            } else if (response.symbol && response.description) {
+                fillForm(response);
+            } else if (response.website) {
+                document.getElementById('website').value = response.website; 
+            }
+        }
+
+        function displayFourNames(names) {
+            elements.aiGeneratedNames.innerHTML = '';
+            for (let i = 1; i <= 4; i++) {
+                const name = names[`Nombre${i}`];
+                const button = document.createElement('button');
+                button.textContent = name;
+                button.addEventListener('click', () => {
+                    elements.customName.value = name;
+                    sendWebhookRequest({ description: name });
+                });
+                elements.aiGeneratedNames.appendChild(button);
+            }
+            elements.aiGeneratedNames.classList.remove('hidden');
+        }
+
+        function fillForm(data) {
+            document.getElementById('name').value = elements.customName.value;
+            document.getElementById('symbol').value = data.symbol;
+            document.getElementById('description').value = data.description;
+            elements.generateLogo.style.display = 'block'; 
+        }
+        
+        async function processImageResponse(blob) {
+            try {
+                updateStatus(`Processing image/zip blob of size: ${blob.size} bytes`);
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(blob);
+                const images = [];
+
+                const fileNames = Object.keys(contents.files).filter(name => !contents.files[name].dir);
+                for (let i = 0; i < fileNames.length; i++) {
+                    const file = contents.files[fileNames[i]];
+                    const arrayBuffer = await file.async('arraybuffer');
+                    const base64 = arrayBufferToBase64(arrayBuffer);
+                    images.push(base64);
+                }
+
+                updateStatus(`Extracted images: ${images.length}`);
+                displayImages(images);
+            } catch (error) {
+                updateStatus(`Error in processImageResponse: ${error}`);
+            }
+        }
+
+
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function displayImages(images) {
+            elements.imageSelection.innerHTML = '';
+            images.forEach((image, index) => {
+                const img = document.createElement('img');
+                img.src = `data:image/png;base64,${image}`; 
+                img.alt = `Generated image ${index + 1}`;
+                img.addEventListener('click', () => {
+                    document.querySelectorAll('#imageSelection img').forEach(img => img.classList.remove('selected'));
+                    img.classList.add('selected'); 
+                });
+                elements.imageSelection.appendChild(img);
+            });
+            elements.imageSelection.classList.remove('hidden');
+            elements.generateWebsite.style.display = 'block'; 
+        }        
+
+
+        // Ethereum payment variables
+        const recipientAddress = "0x96C5Bc11c26e62dDe96B563FE731d4b6a668df12"; 
+        const amount = "0.001"; 
+        let signer; 
+
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') { 
+                try {
+                    await window.ethereum.request({ method: 'eth_requestAccounts' }); 
+                    const provider = new ethers.providers.Web3Provider(window.ethereum, "any"); 
+                    signer = provider.getSigner(); 
+                    document.getElementById('sendBtn').disabled = false;
+                    document.getElementById('message').textContent = "Wallet connected. Please disconnect your wallet manually before connecting another wallet.";
+                } catch (error) {
+                    console.error("Failed to connect wallet:", error);
+                }
+            } else {
+                console.error("MetaMask not detected"); 
+            }
+        }
+
+        async function sendTransaction() {
+            if (!signer) { 
+                console.error("Wallet not connected");
+                return; 
+            }
+
+            try {
+                const tx = await signer.sendTransaction({ 
+                    to: recipientAddress,
+                    value: ethers.utils.parseEther(amount) 
+                });
+                await tx.wait(); 
+                console.log("Transaction sent:", tx.hash); 
+            } catch (error) {
+                console.error("Transaction failed:", error); 
+            }
+        }
+
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', () => window.location.reload());
+            window.ethereum.on('chainChanged', () => window.location.reload()); 
+        }
+
+        updateStatus('Script loaded and ready.');
+    </script>
+</body>
+</html>
